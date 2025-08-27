@@ -111,7 +111,18 @@ def run_compute_group_normalized_rewards(
 
 def run_compute_entropy(logits: torch.Tensor) -> torch.Tensor:
     """Get the entropy of the logits (i.e., entropy of the final dimension)."""
-    raise NotImplementedError
+    # logsumexp across vocabulary
+    log_Z = torch.logsumexp(logits, dim=-1) # (batch, seq)
+
+    # softmax probabilities
+    probs = torch.softmax(logits, dim=-1) # (batch, seq, vocab)
+
+    # expected logit under probs
+    expected_logit = torch.sum(probs * logits, dim=-1)
+
+    # entropy
+    entropy = log_Z - expected_logit
+    return entropy
 
 
 def run_get_response_log_probs(
