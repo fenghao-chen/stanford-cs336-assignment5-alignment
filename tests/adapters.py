@@ -130,7 +130,7 @@ def run_get_response_log_probs(
     input_ids: torch.Tensor,
     labels: torch.Tensor,
     return_token_entropy: bool,
-) -> torch.Tensor:
+) -> dict[str, torch.Tensor]:
     """Get the conditional log-probs of the response given the prompt,
         and optionally the entropy of the next token predictions.
 
@@ -154,8 +154,23 @@ def run_get_response_log_probs(
                 we have not masked out the token indices corresponding to the prompt
                 or padding; that is done in the train loop.
     """
-    raise NotImplementedError
+    with torch.no_grad():
+        logits = model(input_ids).logits # (batch, seq, vocab)
 
+    # log-probabilities over vocab
+    log_probs = torch.log_softmax(logits, dim=-1) # (batch, seq, vocab)
+
+    # Gather log-prob of the actual next token
+    token_log_probs = log_probs.gather(
+        dim=-1, index=labels.unsqueeze(-1)
+    ).squeeze(-1)  # (batch, seq)
+
+    result = {"log_probs": token_log_probs}
+
+    if return_token_entropy:
+        result['token_entropy'] = run_compute_entropy(logits)
+
+    return result
 
 def run_compute_naive_policy_gradient_loss(
     raw_rewards_or_advantages: torch.Tensor,
