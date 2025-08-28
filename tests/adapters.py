@@ -154,8 +154,7 @@ def run_get_response_log_probs(
                 we have not masked out the token indices corresponding to the prompt
                 or padding; that is done in the train loop.
     """
-    with torch.no_grad():
-        logits = model(input_ids).logits # (batch, seq, vocab)
+    logits = model(input_ids).logits  # (batch, seq, vocab)
 
     # log-probabilities over vocab
     log_probs = torch.log_softmax(logits, dim=-1) # (batch, seq, vocab)
