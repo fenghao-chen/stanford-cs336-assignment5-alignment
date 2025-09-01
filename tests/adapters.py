@@ -7,6 +7,7 @@ import torch
 from torch import Tensor
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizerBase
+import numpy as np
 
 
 def run_tokenize_prompt_and_output(
@@ -70,7 +71,7 @@ def run_compute_group_normalized_rewards(
     group_size: int,
     advantage_eps: float,
     normalize_by_std: bool,
-) -> tuple[torch.Tensor, dict[str, float]]:
+) -> tuple[torch.Tensor, torch.Tensor, dict[str, float]]:
     """
     Compute rewards for each group of rollout responses, 
     normalized by the group size.
@@ -106,8 +107,36 @@ def run_compute_group_normalized_rewards(
                 You may choose what you wish to log here
                 (some statistics of the rewards, etc.).
     """
-    raise NotImplementedError
+    # Compute raw rewards
+    raw_rewards = [reward_fn(response, truth)['reward']
+                   for response, truth in zip(rollout_responses, repeated_ground_truths)]
 
+    raw_rewards = torch.tensor(raw_rewards, dtype=torch.float32)
+
+    # Reshape into groups for easier processing
+    rewards_grouped = raw_rewards.view(-1, group_size)  # Shape: (n_groups, group_size)
+
+    # Compute group means and center each group
+    group_means = rewards_grouped.mean(dim=1, keepdim=True)  # Shape: (n_groups, 1)
+    normalized_rewards = rewards_grouped - group_means
+
+    # Normalize by standard deviation if requested
+    if normalize_by_std:
+        group_stds = torch.std(rewards_grouped, dim=1, keepdim=True)  # Sample std
+        normalized_rewards = normalized_rewards / (group_stds + advantage_eps)
+
+    # Flatten back to original shape
+    normalized_rewards = normalized_rewards.flatten()
+
+    # Create metadata
+    metadata = {
+        'mean_raw_reward': float(raw_rewards.mean()),
+        'std_raw_reward': float(raw_rewards.std()),
+        'mean_normalized_reward': float(normalized_rewards.mean()),
+        'std_normalized_reward': float(normalized_rewards.std()),
+    }
+
+    return normalized_rewards, raw_rewards, metadata
 
 def run_compute_entropy(logits: torch.Tensor) -> torch.Tensor:
     """Get the entropy of the logits (i.e., entropy of the final dimension)."""
