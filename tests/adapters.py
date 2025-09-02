@@ -7,7 +7,6 @@ import torch
 from torch import Tensor
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizerBase
-import numpy as np
 
 
 def run_tokenize_prompt_and_output(
@@ -259,7 +258,21 @@ def run_compute_policy_gradient_loss(
     """
     Wrapper that delegates to the appropriate policy gradient loss function above.
     """
-    raise NotImplementedError
+    match loss_type:
+        case 'no_baseline':
+            if raw_rewards is None:
+                raise Exception("raw_rewards must not be None if loss_type = no_baseline")
+            return run_compute_naive_policy_gradient_loss(raw_rewards, policy_log_probs), {}
+        case 'reinforce_with_baseline':
+            if advantages is None:
+                raise Exception("advantages must not be None if loss_type = reinforce_with_baseline")
+            return run_compute_naive_policy_gradient_loss(advantages, policy_log_probs), {}
+        case 'grpo_clip':
+            if advantages is None:
+                raise Exception("advantages must not be None if loss_type = grpo_clip")
+            return run_compute_grpo_clip_loss(advantages, policy_log_probs, old_log_probs, cliprange)
+        case _:
+            raise Exception(f"loss type {loss_type} is not supported")
 
 
 def run_masked_mean(tensor: torch.Tensor, mask: torch.Tensor, dim: int | None = None) -> torch.Tensor:
