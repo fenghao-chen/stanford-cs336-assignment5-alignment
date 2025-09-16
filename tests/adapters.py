@@ -8,6 +8,7 @@ from torch import Tensor
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizerBase
 
+import re
 
 def run_tokenize_prompt_and_output(
     prompt_strs: list[str],
@@ -464,7 +465,13 @@ def run_parse_mmlu_response(
         str (one of "A", "B", "C", or "D") if the model output can be parsed into a prediction,
         else None.
     """
-    raise NotImplementedError
+    result = re.split(r'\W+', model_output)
+    options = ['A', 'B', 'C', 'D']
+    for option in options:
+        if option in result:
+            return option
+
+    return None
 
 
 def run_parse_gsm8k_response(
