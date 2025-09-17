@@ -5,10 +5,15 @@ from typing import Any, Callable, Literal
 
 import torch
 from torch import Tensor
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from transformers import PreTrainedTokenizerBase
 
 import re
+import json
+import random
+from itertools import batched
+
+from tqdm import tqdm
 
 def run_tokenize_prompt_and_output(
     prompt_strs: list[str],
@@ -416,7 +421,53 @@ def get_packed_sft_dataset(
         "input_ids" contains the token IDs for the language modeling inputs, and "labels" contains
         the token IDs for the language modeling labels.
     """
-    raise NotImplementedError
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    class SafetySFTDataset(Dataset):
+        def __init__(self, tokenizer, dataset_path, seq_length, shuffle):
+            data = []
+            with open(dataset_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    try:
+                        # Parse each line as a JSON object
+                        json_object = json.loads(line.strip())
+                        prompt = json_object['prompt']
+                        response = json_object['response']
+                        full_text = (
+                            "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n"
+                            "### Instruction:\n"
+                            f"{prompt}\n\n"
+                            "### Response:\n"
+                            f"{response}<|end_of_text|>"
+                        )
+                        data.append(full_text)
+                    except json.JSONDecodeError as e:
+                        print(f"Error decoding JSON on line: {line.strip()}. Error: {e}")
+            if shuffle:
+                random.shuffle(data)
+
+            tokenized = []
+            for idx, d in tqdm(enumerate(data)):
+                tokenized += tokenizer.encode(d)
+
+            input_ids = list(batched(tokenized[:-1], seq_length))
+            labels = list(batched(tokenized[1:], seq_length))
+            if len(input_ids[-1]) < seq_length:
+                del input_ids[-1]
+                del labels[-1]
+
+            self.input_ids = input_ids
+            self.labels = labels
+
+        def __len__(self):
+            return len(self.input_ids)
+
+        def __getitem__(self, index):
+            input_ids = self.input_ids[index]
+            labels = self.labels[index]
+            return {"input_ids": Tensor(input_ids).long().to(device), "labels": Tensor(labels).long().to(device)}
+
+    return SafetySFTDataset(tokenizer, dataset_path, seq_length, shuffle)
 
 
 def run_iterate_batches(
@@ -439,7 +490,7 @@ def run_iterate_batches(
     Returns:
         Iterable over batches, where each batch has size `batch_size`.
     """
-    raise NotImplementedError
+    return DataLoader(dataset=dataset, batch_size=batch_size, shuffle=shuffle)
 
 
 def run_parse_mmlu_response(
